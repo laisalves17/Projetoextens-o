@@ -1,0 +1,187 @@
+package com.exemplo.controleestoque
+
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+
+class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+
+    companion object {
+        private const val DATABASE_NAME = "estoque.db"
+        private const val DATABASE_VERSION = 1
+        const val TABLE_NAME = "itens"
+        const val COLUMN_ID = "id"
+        const val COLUMN_NOME = "nome"
+        const val COLUMN_QUANTIDADE = "quantidade"
+    }
+
+    override fun onCreate(db: SQLiteDatabase?) {
+        val createTable = "CREATE TABLE $TABLE_NAME (" +
+                "$COLUMN_ID INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "$COLUMN_NOME TEXT NOT NULL, " +
+                "$COLUMN_QUANTIDADE INTEGER NOT NULL)"
+        db?.execSQL(createTable)
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase?, oldVersion: Int, newVersion: Int) {
+        db?.execSQL("DROP TABLE IF EXISTS $TABLE_NAME")
+        onCreate(db)
+    }
+}
+package com.exemplo.controleestoque
+
+data class Item(val id: Int, val nome: String, val quantidade: Int)
+package com.exemplo.controleestoque
+
+import android.content.ContentValues
+import android.content.Context
+import android.database.Cursor
+import android.database.SQLException
+
+class EstoqueRepository(context: Context) {
+    private val dbHelper = DatabaseHelper(context)
+
+    fun adicionarItem(nome: String, quantidade: Int): Boolean {
+        val db = dbHelper.writableDatabase
+        val values = ContentValues()
+        values.put(DatabaseHelper.COLUMN_NOME, nome)
+        values.put(DatabaseHelper.COLUMN_QUANTIDADE, quantidade)
+
+        val result = db.insert(DatabaseHelper.TABLE_NAME, null, values)
+        db.close()
+        return result != -1L
+    }
+
+    fun obterTodosItens(): List<Item> {
+        val db = dbHelper.readableDatabase
+        val cursor: Cursor = db.query(
+            DatabaseHelper.TABLE_NAME,
+            null, null, null, null, null, null
+        )
+
+        val itens = mutableListOf<Item>()
+        if (cursor.moveToFirst()) {
+            do {
+                val id = cursor.getInt(cursor.getColumnIndex(DatabaseHelper.COLUMN_ID))
+                val nome = cursor.getString(cursor.getColumnIndex(DatabaseHelper.COLUMN_NOME))
+                val quantidade = cursor.getInt(cursor.getColumnIndex(DatabaseHelper.COLUMN_QUANTIDADE))
+                itens.add(Item(id, nome, quantidade))
+            } while (cursor.moveToNext())
+        }
+        cursor.close()
+        db.close()
+        return itens
+    }
+
+    fun removerItem(id: Int): Boolean {
+        val db = dbHelper.writableDatabase
+        val result = db.delete(DatabaseHelper.TABLE_NAME, "${DatabaseHelper.COLUMN_ID} = ?", arrayOf(id.toString()))
+        db.close()
+        return result > 0
+    }
+}
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <EditText
+        android:id="@+id/edtNome"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Nome do item" />
+
+    <EditText
+        android:id="@+id/edtQuantidade"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Quantidade"
+        android:inputType="number" />
+
+    <Button
+        android:id="@+id/btnAdicionar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Adicionar Item" />
+
+    <ListView
+        android:id="@+id/lvEstoque"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+</LinearLayout>
+package com.exemplo.controleestoque
+
+import android.os.Bundle
+import android.view.View
+import android.widget.ArrayAdapter
+import android.widget.ListView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import android.widget.EditText
+import android.widget.Button
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var estoqueRepository: EstoqueRepository
+    private lateinit var edtNome: EditText
+    private lateinit var edtQuantidade: EditText
+    private lateinit var lvEstoque: ListView
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        edtNome = findViewById(R.id.edtNome)
+        edtQuantidade = findViewById(R.id.edtQuantidade)
+        lvEstoque = findViewById(R.id.lvEstoque)
+
+        estoqueRepository = EstoqueRepository(this)
+
+        val btnAdicionar: Button = findViewById(R.id.btnAdicionar)
+        btnAdicionar.setOnClickListener {
+            val nome = edtNome.text.toString()
+            val quantidade = edtQuantidade.text.toString().toIntOrNull()
+
+            if (nome.isNotEmpty() && quantidade != null && quantidade > 0) {
+                val sucesso = estoqueRepository.adicionarItem(nome, quantidade)
+                if (sucesso) {
+                    Toast.makeText(this, "Item adicionado com sucesso!", Toast.LENGTH_SHORT).show()
+                    atualizarListaEstoque()
+                } else {
+                    Toast.makeText(this, "Erro ao adicionar item.", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(this, "Preencha todos os campos corretamente.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        atualizarListaEstoque()
+    }
+
+    private fun atualizarListaEstoque() {
+        val itens = estoqueRepository.obterTodosItens()
+        val adaptador = ArrayAdapter(this, android.R.layout.simple_list_item_1, itens.map { "${it.nome} - ${it.quantidade}" })
+        lvEstoque.adapter = adaptador
+    }
+}
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.exemplo.controleestoque">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.AppCompat.DayNight">
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
